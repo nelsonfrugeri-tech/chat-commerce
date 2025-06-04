@@ -1,0 +1,5 @@
+qdrant-client
+pandas
+openai
+fastapi
+uvicorn
