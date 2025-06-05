@@ -35,7 +35,8 @@ async def chat(query_text: str, field: str = None, value: str = None, limit: int
         {"role": "user", "content": query_text},
     ]
     query_filter_response = await openai_client.chat_with_json_response(
-        messages=entity_recognition_prompt
+        messages=entity_recognition_prompt,
+        model="gpt-4.1-nano",
     )
     query_filter = (
         query_filter_response if isinstance(query_filter_response, dict) else {}
@@ -43,7 +44,6 @@ async def chat(query_text: str, field: str = None, value: str = None, limit: int
 
     print(f"Query filter: {query_filter}")
 
-    # Use extracted field and value as filter if available
     filter_field = query_filter.get("field", field)
     filter_value = query_filter.get("value", value)
 
@@ -58,44 +58,48 @@ async def chat(query_text: str, field: str = None, value: str = None, limit: int
 
     print(f"Search results: {search_results}")
 
-    context = [result.payload for result in search_results]
+    if len(search_results) > 0:
+        context = [result.payload for result in search_results]
 
-    rerank_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an e-commerce assistant. Your task is to re-rank and validate each product individually based on relevance and factual accuracy "
-                "related to the user's query. If any product is not related or does not make sense, remove it completely from the list. "
-                "Return a JSON object containing a 'products' list reordered and validated. "
-                f"Original products:\n{json.dumps(context, ensure_ascii=False)}"
-            ),
-        },
-        {"role": "user", "content": query_text},
-    ]
+        rerank_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an e-commerce assistant. Your task is to re-rank and validate each product individually based on relevance and factual accuracy "
+                    "related to the user's query. If any product is not related or does not make sense, remove it completely from the list. "
+                    "Return a JSON object containing a 'products' list reordered and validated. "
+                    f"Original products:\n{json.dumps(context, ensure_ascii=False)}"
+                ),
+            },
+            {"role": "user", "content": query_text},
+        ]
 
-    validated_products_response = await openai_client.chat_with_json_response(
-        messages=rerank_messages
-    )
-    validated_products = validated_products_response.get("products", [])
+        validated_products_response = await openai_client.chat_with_json_response(
+            messages=rerank_messages,
+            model="gpt-4.1-nano",
+        )
+        validated_products = validated_products_response.get("products", [])
 
-    print(f"Validated products: {validated_products}")
+        print(f"Validated products: {validated_products}")
 
-    streaming_context = "\n".join(
-        [json.dumps(prod, ensure_ascii=False) for prod in validated_products]
-    )
+        streaming_context = "\n".join(
+            [json.dumps(prod, ensure_ascii=False) for prod in validated_products]
+        )
 
-    chat_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an e-commerce assistant. Use the provided context, which includes only validated and reordered products, "
-                "to answer the user's query in the most clear and useful way possible. "
-                "If the user's query is not related to the products, return 'I'm sorry, I can't help with that.' "
-                f"Context of the products:\n{streaming_context}"
-            ),
-        },
-        {"role": "user", "content": query_text},
-    ]
+        chat_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an e-commerce assistant. Use the provided context, which includes only validated and reordered products, "
+                    "to answer the user's query in the most clear and useful way possible. "
+                    "If the user's query is not related to the products, return 'I'm sorry, I can't help with that.' "
+                    f"Context of the products:\n{streaming_context}"
+                ),
+            },
+            {"role": "user", "content": query_text},
+        ]
 
-    async for chunk in openai_client.stream_chat_completion(messages=chat_messages):
-        yield chunk
+        async for chunk in openai_client.stream_chat_completion(messages=chat_messages):
+            yield chunk
+    else:
+        yield "I'm sorry, I can't help with that."
