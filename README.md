@@ -67,11 +67,10 @@ O projeto demonstra uma arquitetura moderna para busca semântica conversacional
 
 ## Diferenciais Técnicos
 
-- Reconhecimento dinâmico e automático dos campos do payload (código sempre atualizado com os modelos).
 - Pipeline desacoplada, assíncrona, robusta para ingestão e atualização dos dados.
 - Busca híbrida, combinando filtros textuais e vetoriais de alta performance.
+- Reconhecimento de entidades para realizar a busca híbrida.
 - Neural re-rank em duas etapas para máxima factualidade e contexto real na resposta.
-- Arquitetura pronta para expansão (novos campos, novos providers de LLM ou banco vetorial).
 
 ---
 
