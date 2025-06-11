@@ -18,10 +18,6 @@ from pydantic import (
 )
 
 
-class Vector(BaseModel):
-    product_details_vector: List[float]
-
-
 class Merchant(BaseModel):
     name: str
     link: HttpUrl
@@ -43,7 +39,6 @@ class Payload(BaseModel):
 class Product(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     payload: Payload
-    vector: Optional[Vector] = None
 
 
 __all__ = ("Product", "Payload", "Merchant", "Vector")

@@ -5,7 +5,7 @@ from src.adapter.service.openai.client import OpenAIClient
 from src.adapter.database.qdrant.driver import QdrantDriver
 
 openai_client = OpenAIClient()
-qdrant_driver = QdrantDriver()
+qdrant_driver = QdrantDriver(collection_name="products_v2")
 
 
 def get_nested_fields(model: BaseModel, prefix=""):
@@ -47,13 +47,11 @@ async def chat(query_text: str, field: str = None, value: str = None, limit: int
     filter_field = query_filter.get("field", field)
     filter_value = query_filter.get("value", value)
 
-    query_vector = await openai_client.embed(query=query_text)
     search_results = await qdrant_driver.hybrid_search(
-        collection_name="products_v1",
-        query_vector=query_vector,
+        text=query_text,
         field=filter_field,
         value=filter_value,
-        limit=limit,
+        limit=limit
     )
 
     print(f"Search results: {search_results}")

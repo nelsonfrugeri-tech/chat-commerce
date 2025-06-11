@@ -1,25 +1,15 @@
 import asyncio
 import csv
 from pathlib import Path
-from src.domain.product import Product, Payload, Merchant, Vector
-from src.adapter.service.openai.client import OpenAIClient
+from src.domain.product import Product, Payload, Merchant
 from src.adapter.database.qdrant.driver import QdrantDriver
 
 DATASET_PATH = Path(__file__).resolve().parents[2] / "../datasource/dataset.csv"
-COLLECTION_NAME = "products_v1"
+COLLECTION_NAME = "products_v2"
 EMBEDDING_MODEL = "text-embedding-3-small"
 
-openai_client = OpenAIClient()
-qdrant = QdrantDriver()
-qdrant.create_collection(
-    collection_name=COLLECTION_NAME,        
-    payload_schema={
-        "product_name": {"type": "text", "tokenizer": "prefix", "lowercase": True},
-        "product_details": {"type": "text", "tokenizer": "prefix", "lowercase": True},
-        "description": {"type": "text", "tokenizer": "prefix", "lowercase": True},
-        "search_keyword": {"type": "text", "tokenizer": "prefix", "lowercase": True},
-    }
-)
+qdrant = QdrantDriver(collection_name=COLLECTION_NAME)
+qdrant.create_collection()
 
 
 async def safe_float(value):
@@ -56,31 +46,20 @@ async def process_and_index():
                     reviews_count=await safe_int(row.get("reviewsCount")),
                     reviews_score=await safe_float(row.get("reviewsScore")) or 0.0,
                     search_keyword=row.get("searchKeyword") or None,
-                    without_discount_price=await safe_float(row.get("withoutDiscountPrice")),
+                    without_discount_price=await safe_float(
+                        row.get("withoutDiscountPrice")
+                    ),
                 )
 
-                if payload.product_details:
-                    vector =Vector(
-                        product_details_vector=await openai_client.embed(payload.product_details)
-                    )
-                elif payload.description:
-                    vector =Vector(
-                        product_details_vector=await openai_client.embed(payload.description)
-                    )
-                else:
-                    vector =Vector(
-                        product_details_vector=await openai_client.embed(payload.product_name)
-                    )
+                product = Product(payload=payload)
 
-                product = Product(payload=payload, vector=vector)
-
-                await qdrant.insert_point(
-                    collection_name=COLLECTION_NAME,
-                    point={
-                        "id": str(product.id),
-                        "vector": vector.product_details_vector,  # Você pode usar um vetor específico aqui
-                        "payload": product.payload.model_dump(),
-                    },
+                await qdrant.upsert_point(
+                    point_id=idx,
+                    text=payload.product_details
+                    or payload.description
+                    or payload.product_name
+                    or "",
+                    payload=product.payload.model_dump(),
                 )
 
                 print(f"[INFO] Produto indexado com sucesso: {product.id}")

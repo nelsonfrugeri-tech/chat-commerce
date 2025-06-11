@@ -1,68 +1,97 @@
-from qdrant_client import QdrantClient, AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams, TextIndexParams
+from qdrant_client import QdrantClient, AsyncQdrantClient, models
+from qdrant_client.models import Distance, VectorParams, TextIndexParams, MatchText
 from qdrant_client.models import Filter, FieldCondition
-from typing import Optional
+from tqdm import tqdm
+
+from src.adapter.service.openai.client import OpenAIClient
 
 
 class QdrantDriver:
-    def __init__(self, host="localhost", port=6333):
+    def __init__(self, collection_name: str, host="localhost", port=6333):
         self.client = QdrantClient(host=host, port=port)
         self.client_async = AsyncQdrantClient(host=host, port=port)
+        self.collection_name = collection_name
+        self.dense_model_name = "text-embedding-3-small"
+        self.sparse_model_name = "prithivida/Splade_PP_en_v1"
+        self.openai_client = OpenAIClient()
 
     def create_collection(
         self,
-        collection_name: str,
         size: int = 1536,
         distance: Distance = Distance.COSINE,
-        payload_schema: dict = {},
     ):
         self.client.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=size, distance=distance),
+            collection_name=self.collection_name,
+            vectors_config={
+                "dense": models.VectorParams(
+                    size=size,
+                    distance=models.Distance.COSINE,
+                )
+            },
+            sparse_vectors_config={
+                "sparse": models.SparseVectorParams(
+                    index=models.SparseIndexParams(on_disk=False)
+                )
+            },
         )
 
-        if payload_schema:
-            for field_name, schema in payload_schema.items():
-                self.client.create_payload_index(
-                    collection_name=collection_name,
-                    field_name=field_name,
-                    field_schema=TextIndexParams(
-                        type=schema["type"],
-                        tokenizer=schema["tokenizer"],
-                        lowercase=schema["lowercase"]
-                    )
+    async def upsert_point(self, point_id: int, text: str, payload: dict):
+        dense_vector = await self.openai_client.embed(text=text)
+
+        if dense_vector is None:
+            print(f"Não foi possível criar o embedding para o ponto {point_id}")
+            return
+
+        await self.client_async.upsert(
+            collection_name=self.collection_name,
+            points=[
+                models.PointStruct(
+                    id=point_id,
+                    vector={
+                        "dense": dense_vector,
+                        "sparse": models.Document(
+                            text=text, model=self.sparse_model_name
+                        ),
+                    },
+                    payload=payload,
                 )
+            ],
+        )
 
-    async def insert_point(self, collection_name: str, point: dict):
-        await self.client_async.upsert(collection_name=collection_name, points=[point])
-
-    def insert_batch(
-        self, collection_name: str, points: list[dict], batch_size: int = 100
-    ):
+    def insert_batch(self, points: list[dict], batch_size: int = 100):
         try:
             for i in range(0, len(points), batch_size):
                 batch_points = points[i : i + batch_size]
-                self.client.upsert(collection_name=collection_name, points=batch_points)
+                self.client.upsert(
+                    collection_name=self.collection_name, points=batch_points
+                )
         except Exception as e:
             print(f"Erro ao inserir batch: {e}")
 
-    from qdrant_client.models import Filter, FieldCondition, MatchValue
-
-    async def hybrid_search(
-        self, collection_name, query_vector, field=None, value=None, limit=10
-    ):
+    async def hybrid_search(self, text: str, field: str, value: str, limit=10):
         query_filter = None
         if field and value:
             query_filter = Filter(
-                must=[FieldCondition(key=field, match={"text": value})]
+                must=[FieldCondition(key=field, match=MatchText(text=value))]
             )
+        
+        query_vector = await self.openai_client.embed(text=text)
 
-        print(f"Query filter: {query_filter}")
-
-        results = await self.client_async.search(
-            collection_name=collection_name,
-            query_vector=query_vector,
+        search_result = await self.client_async.query_points(
+            collection_name=self.collection_name,
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            prefetch=[
+                models.Prefetch(
+                    query=query_vector,
+                    using="dense",
+                ),
+                models.Prefetch(
+                    query=models.Document(text=text, model=self.sparse_model_name),
+                    using="sparse",
+                ),
+            ],
             query_filter=query_filter,
             limit=limit,
         )
-        return results
+
+        return search_result.points

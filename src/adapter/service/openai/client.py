@@ -8,11 +8,11 @@ class OpenAIClient:
         self.client = AsyncOpenAI()
 
     async def embed(
-        self, query: str, model: str = "text-embedding-3-small", dimensions: int = 1536
+        self, text: str, model: str = "text-embedding-3-small", dimensions: int = 1536
     ) -> list[float]:
         response = await self.client.embeddings.create(
             model=model,
-            input=[query],
+            input=[text],
             dimensions=dimensions,
             encoding_format="float",
         )
