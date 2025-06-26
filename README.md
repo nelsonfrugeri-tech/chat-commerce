@@ -1,4 +1,3 @@
-
 # chat-commerce
 
 **chat-commerce** é uma aplicação Python para busca inteligente e conversação natural sobre catálogos de produtos, integrando IA generativa, embeddings, re-ranking neural e banco vetorial. Com uma API conversacional pronta para integração, a aplicação permite experiências avançadas de busca, recomendação e atendimento via chat para plataformas de e-commerce.
